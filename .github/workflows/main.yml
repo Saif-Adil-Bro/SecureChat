@@ -22,8 +22,23 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Install Expo CLI globally
-        run: npm install -g expo-cli
+      - name: Generate Native Android Folder
+        run: npx expo prebuild --platform android
 
-      - name: Export Expo Project
-        run: npx expo export --platform android
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Build Android Release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureChat-APK
+          path: android/app/build/outputs/apk/release/app-release.apk
