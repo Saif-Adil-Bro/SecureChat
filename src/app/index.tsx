@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,36 +9,29 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { Svg, Rect, Path, Circle } from "react-native-svg";
 
+// Firebase Imports
+import { auth } from "../config/firebase";
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  onAuthStateChanged, 
+  signOut 
+} from "firebase/auth";
+
 // Types Definition
-interface Contact {
-  id: number;
-  name: string;
-  avatar: string;
-  status: string;
-  lastSeen: string;
-  color: string;
-}
+interface Contact { id: number; name: string; avatar: string; status: string; lastSeen: string; color: string; }
+interface Message { id: number; text: string; sent: boolean; time: string; encrypted: boolean; }
+interface MessagesState { [key: number]: Message[]; }
 
-interface Message {
-  id: number;
-  text: string;
-  sent: boolean;
-  time: string;
-  encrypted: boolean;
-}
-
-interface MessagesState {
-  [key: number]: Message[];
-}
-
-// Icons
+// Icons Helper
 function ShieldIcon() {
   return (
-    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" strokeWidth="2">
+    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" strokeWidth="2">
       <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </Svg>
   );
@@ -53,47 +46,84 @@ function LockIcon() {
   );
 }
 
-function SendIcon({ color }: { color: string }) {
-  return (
-    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-      <Line x1="22" y1="2" x2="11" y2="13" />
-      <Polygon points="22 2 15 22 11 13 2 9 22 2" />
-    </Svg>
-  );
-}
-
-// Dummy helper component for subline missing React Native elements
-function Line(props: any) { return <Path d={`M${props.x1} ${props.y1} L${props.x2} ${props.y2}`} {...props} /> }
-function Polygon(props: any) { return <Path d={`M ${props.points}`} {...props} /> }
-
+// Dummy Data for Chat
 const contactsData: Contact[] = [
   { id: 1, name: "টপ সিক্রেট গ্রুপ", avatar: "TG", status: "online", lastSeen: "", color: "#00e5ff" },
   { id: 2, name: "রকিব (Agent X)", avatar: "RX", status: "online", lastSeen: "", color: "#ff3d00" },
-  { id: 3, name: "তাসনিম (HQ)", avatar: "TH", status: "offline", lastSeen: "১০ মিনিট আগে", color: "#00e676" },
-  { id: 4, name: "বসের ফোন", avatar: "BP", status: "offline", lastSeen: "১ ঘণ্টা আগে", color: "#ffea00" },
 ];
 
 const initialMessages: MessagesState = {
   1: [
-    { id: 1, text: "নতুন সিকিউর মেসেঞ্জার কোডটি কি রেডি?", sent: false, time: "১০:০৫ AM", encrypted: true },
-    { id: 2, text: "হ্যাঁ ভাই, UI এবং টাইপস্ক্রিপ্ট সব ফিক্স করা হয়েছে।", sent: true, time: "১০:০৬ AM", encrypted: true },
+    { id: 1, text: "ফায়ারবেজ অথ সাকসেসফুলি কানেক্টেড!", sent: false, time: "১০:০৫ AM", encrypted: true },
   ],
   2: [],
-  3: [],
-  4: [],
 };
 
-export default function SecureChat() {
-  const [contacts] = useState<Contact[]>(contactsData);
+export default function App() {
+  // Navigation & Auth States
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSignUp, setIsSignUp] = useState(false); // Toggle between Login & Signup
+
+  // Input States
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [inputText, setInputText] = useState("");
+
+  // Chat States
   const [activeContact, setActiveContact] = useState<Contact | null>(contactsData[0]);
   const [messages, setMessages] = useState<MessagesState>(initialMessages);
-  const [inputText, setInputText] = useState("");
-  
   const messagesEndRef = useRef<ScrollView>(null);
 
+  // ফায়ারবেজ সেশন ট্র্যাক করা (ইউজার একবার লগইন থাকলে অ্যাপে সরাসরি ঢুকে যাবে)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  // সাইনআপ ফাংশন
+  const handleSignUp = async () => {
+    if (!email || !password) return Alert.alert("ভুল", "দয়া করে সব ঘর পূরণ করুন।");
+    setLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email.trim(), password);
+      Alert.alert("সফল", "অ্যাকাউন্ট তৈরি সম্পূর্ণ হয়েছে!");
+    } catch (error: any) {
+      Alert.alert("সাইনআপ ব্যর্থ", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // সাইনইন ফাংশন
+  const handleSignIn = async () => {
+    if (!email || !password) return Alert.alert("ভুল", "ইমেইল এবং পাসওয়ার্ড দিন।");
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (error: any) {
+      Alert.alert("লগইন ব্যর্থ", "ইমেইল বা পাসওয়ার্ড ভুল হয়েছে।");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // লগআউট ফাংশন
+  const handleLogOut = async () => {
+    try {
+      await signOut(auth);
+      setActiveContact(contactsData[0]);
+    } catch (error: any) {
+      Alert.alert("ত্রুটি", "লগআউট করা যায়নি।");
+    }
+  };
+
+  // চ্যাট মেসেজ পাঠানোর ফাংশন
   const handleSendMessage = () => {
     if (!inputText.trim() || !activeContact) return;
-
     const newMsg: Message = {
       id: Date.now(),
       text: inputText,
@@ -101,89 +131,134 @@ export default function SecureChat() {
       time: "১০:১০ AM",
       encrypted: true,
     };
-
     setMessages((prev) => ({
       ...prev,
       [activeContact.id]: [...(prev[activeContact.id] || []), newMsg],
     }));
-
     setInputText("");
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: "center" }]}>
+        <ActivityIndicator size="large" color="#00e5ff" />
+      </View>
+    );
+  }
+
+  // --- স্ক্রিন ১: লগইন / সাইনআপ গেটওয়ে ---
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.authCentered}>
+          <View style={styles.authCard}>
+            <View style={{ alignItems: "center", marginBottom: 24 }}>
+              <ShieldIcon />
+              <Text style={styles.authTitle}>{isSignUp ? "নতুন অ্যাকাউন্ট" : "সিকিউর লগইন"}</Text>
+              <Text style={styles.authSubtitle}>SecureChat End-to-End Encrypted</Text>
+            </View>
+
+            <TextInput
+              style={styles.inputField}
+              placeholder="আপনার ইমেইল"
+              placeholderTextColor="#546e7a"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            <TextInput
+              style={styles.inputField}
+              placeholder="পাসওয়ার্ড"
+              placeholderTextColor="#546e7a"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            <TouchableOpacity style={styles.primaryButton} onPress={isSignUp ? handleSignUp : handleSignIn}>
+              <Text style={styles.buttonText}>{isSignUp ? "সাইন আপ করুন" : "প্রবেশ করুন"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={{ marginTop: 16 }} onPress={() => setIsSignUp(!isSignUp)}>
+              <Text style={styles.switchText}>
+                {isSignUp ? "আগে থেকেই অ্যাকাউন্ট আছে? লগইন করুন" : "নতুন ইউজার? অ্যাকাউন্ট তৈরি করুন"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // --- স্ক্রিন ২: মেইন চ্যাট ইন্টারফেস (লগইন হওয়ার পর) ---
   const currentMessages = activeContact ? messages[activeContact.id] || [] : [];
 
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.innerContainer}>
         
-        {/* Sidebar/Contact List if no active contact or full screen split */}
+        {/* অ্যাপ হেডার ও লগআউট বাটন */}
         <View style={styles.header}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <View style={{ marginRight: 8 }}><ShieldIcon /></View>
-            <Text style={styles.headerTitle}>SecureChat V2.8</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <ShieldIcon />
+              <Text style={styles.headerTitle}>SecureChat V2.8</Text>
+            </View>
+            <TouchableOpacity onPress={handleLogOut} style={styles.logoutBtn}>
+              <Text style={{ color: "#ff3d00", fontSize: 12, fontWeight: "bold" }}>লগআউট</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
+        {/* কন্টাক্ট লিস্ট */}
         <ScrollView style={styles.contactList} horizontal showsHorizontalScrollIndicator={false}>
-          {contacts.map((contact) => {
-            const lastMsg = messages[contact.id]?.slice(-1)[0];
-            return (
-              <TouchableOpacity
-                key={contact.id}
-                onPress={() => setActiveContact(contact)}
-                style={[styles.contactCard, activeContact?.id === contact.id && styles.activeContactCard]}
-              >
-                <Text style={[styles.avatarText, { color: contact.color }]}>{contact.avatar}</Text>
-                <Text style={styles.contactName} numberOfLines={1}>{contact.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {contactsData.map((contact) => (
+            <TouchableOpacity
+              key={contact.id}
+              onPress={() => setActiveContact(contact)}
+              style={[styles.contactCard, activeContact?.id === contact.id && styles.activeContactCard]}
+            >
+              <Text style={[styles.avatarText, { color: contact.color }]}>{contact.avatar}</Text>
+              <Text style={styles.contactName}>{contact.name}</Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
 
-        {/* Chat Area */}
-        {activeContact ? (
-          <View style={styles.chatArea}>
-            <View style={styles.chatHeader}>
-              <Text style={styles.chatTitle}>{activeContact.name}</Text>
-              <Text style={styles.chatStatus}>
-                {activeContact.status === "online" ? "● অনলাইন" : `শেষ দেখা ${activeContact.lastSeen}`}
-              </Text>
-            </View>
-
-            <ScrollView 
-              ref={messagesEndRef}
-              style={styles.messageContainer}
-              onContentSizeChange={() => messagesEndRef.current?.scrollToEnd({ animated: true })}
-            >
-              {currentMessages.map((msg) => (
-                <View key={msg.id} style={[styles.messageBubble, msg.sent ? styles.sentBubble : styles.receivedBubble]}>
-                  <Text style={styles.messageText}>{msg.text}</Text>
-                  <View style={styles.messageFooter}>
-                    {msg.encrypted && <LockIcon />}
-                    <Text style={styles.messageTime}>{msg.time}</Text>
-                  </View>
+        {/* চ্যাট বক্স */}
+        <View style={styles.chatArea}>
+          <ScrollView 
+            ref={messagesEndRef}
+            style={styles.messageContainer}
+            onContentSizeChange={() => messagesEndRef.current?.scrollToEnd({ animated: true })}
+          >
+            {currentMessages.map((msg) => (
+              <View key={msg.id} style={[styles.messageBubble, msg.sent ? styles.sentBubble : styles.receivedBubble]}>
+                <Text style={styles.messageText}>{msg.text}</Text>
+                <View style={styles.messageFooter}>
+                  {msg.encrypted && <LockIcon />}
+                  <Text style={styles.messageTime}>{msg.time}</Text>
                 </View>
-              ))}
-            </ScrollView>
+              </View>
+            ))}
+          </ScrollView>
 
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                value={inputText}
-                onChangeText={setInputText}
-                placeholder="গোপন বার্তা লিখুন..."
-                placeholderTextColor="#546e7a"
-              />
-              <TouchableOpacity onPress={handleSendMessage} style={styles.sendButton}>
-                <SendIcon color="#00e5ff" />
-              </TouchableOpacity>
-            </View>
+          {/* ইনপুট বক্স */}
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="গোপন বার্তা লিখুন..."
+              placeholderTextColor="#546e7a"
+            />
+            <TouchableOpacity onPress={handleSendMessage} style={styles.sendButton}>
+              <Text style={{ color: "#00e5ff", fontWeight: "bold" }}>Send</Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.welcomeArea}>
-            <Text style={styles.welcomeText}>চ্যাট শুরু করতে যেকোনো একটি কন্টাক্ট সিলেক্ট করুন</Text>
-          </View>
-        )}
+        </View>
 
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -191,131 +266,33 @@ export default function SecureChat() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#060a10",
-  },
-  innerContainer: {
-    flex: 1,
-  },
-  header: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#102a43",
-    backgroundColor: "#0b1528",
-  },
-  headerTitle: {
-    color: "#00e5ff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  contactList: {
-    padding: 10,
-    backgroundColor: "#0b1528",
-    maxHeight: 80,
-  },
-  contactCard: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: "#102a43",
-    marginRight: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    height: 40,
-    flexDirection: "row",
-  },
-  activeContactCard: {
-    backgroundColor: "#00e5ff20",
-    borderColor: "#00e5ff",
-    borderWidth: 1,
-  },
-  avatarText: {
-    fontWeight: "bold",
-    marginRight: 6,
-  },
-  contactName: {
-    color: "#ffffff",
-    fontSize: 13,
-  },
-  chatArea: {
-    flex: 1,
-    backgroundColor: "#060a10",
-  },
-  chatHeader: {
-    padding: 12,
-    backgroundColor: "#0b1528",
-    borderBottomWidth: 1,
-    borderBottomColor: "#102a43",
-  },
-  chatTitle: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  chatStatus: {
-    color: "#00e676",
-    fontSize: 12,
-  },
-  messageContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  messageBubble: {
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 10,
-    maxWidth: "80%",
-  },
-  sentBubble: {
-    backgroundColor: "#00e5ff15",
-    alignSelf: "flex-end",
-    borderWidth: 1,
-    borderColor: "#00e5ff30",
-  },
-  receivedBubble: {
-    backgroundColor: "#102a43",
-    alignSelf: "flex-start",
-  },
-  messageText: {
-    color: "#ffffff",
-    fontSize: 15,
-  },
-  messageFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-end",
-    marginTop: 4,
-  },
-  messageTime: {
-    color: "#546e7a",
-    fontSize: 10,
-    marginLeft: 4,
-  },
-  inputContainer: {
-    flexDirection: "row",
-    padding: 12,
-    backgroundColor: "#0b1528",
-    alignItems: "center",
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#102a43",
-    color: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
-    marginRight: 8,
-  },
-  sendButton: {
-    padding: 10,
-  },
-  welcomeArea: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  welcomeText: {
-    color: "#546e7a",
-  },
+  container: { flex: 1, backgroundColor: "#060a10" },
+  innerContainer: { flex: 1 },
+  authCentered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
+  authCard: { width: "100%", maxWidth: 360, backgroundColor: "#0b1528", padding: 24, borderRadius: 16, borderWidth: 1, borderColor: "#102a43" },
+  authTitle: { color: "#00e5ff", fontSize: 22, fontWeight: "bold", marginTop: 12 },
+  authSubtitle: { color: "#546e7a", fontSize: 12, marginTop: 4 },
+  inputField: { width: "100%", backgroundColor: "#102a43", color: "#fff", padding: 14, borderRadius: 8, marginBottom: 16, fontSize: 15 },
+  primaryButton: { width: "100%", backgroundColor: "#00e5ff", padding: 14, borderRadius: 8, alignItems: "center", marginTop: 8 },
+  buttonText: { color: "#060a10", fontSize: 16, fontWeight: "bold" },
+  switchText: { color: "#546e7a", fontSize: 13, textAlign: "center" },
+  header: { padding: 16, borderBottomWidth: 1, borderBottomColor: "#102a43", backgroundColor: "#0b1528" },
+  headerTitle: { color: "#00e5ff", fontSize: 18, fontWeight: "bold", marginLeft: 8 },
+  logoutBtn: { padding: 6, borderWidth: 1, borderColor: "#ff3d0040", borderRadius: 6 },
+  contactList: { padding: 10, backgroundColor: "#0b1528", maxHeight: 60 },
+  contactCard: { paddingHorizontal: 12, borderRadius: 20, backgroundColor: "#102a43", marginRight: 10, alignItems: "center", height: 36, flexDirection: "row" },
+  activeContactCard: { backgroundColor: "#00e5ff20", borderColor: "#00e5ff", borderWidth: 1 },
+  avatarText: { fontWeight: "bold", marginRight: 6 },
+  contactName: { color: "#ffffff", fontSize: 13 },
+  chatArea: { flex: 1 },
+  messageContainer: { flex: 1, padding: 16 },
+  messageBubble: { padding: 12, borderRadius: 16, marginBottom: 10, maxWidth: "80%" },
+  sentBubble: { backgroundColor: "#00e5ff15", alignSelf: "flex-end", borderWidth: 1, borderColor: "#00e5ff30" },
+  receivedBubble: { backgroundColor: "#102a43", alignSelf: "flex-start" },
+  messageText: { color: "#ffffff", fontSize: 15 },
+  messageFooter: { flexDirection: "row", alignItems: "center", alignSelf: "flex-end", marginTop: 4 },
+  messageTime: { color: "#546e7a", fontSize: 10, marginLeft: 4 },
+  inputContainer: { flexDirection: "row", padding: 12, backgroundColor: "#0b1528", alignItems: "center" },
+  input: { flex: 1, backgroundColor: "#102a43", color: "#fff", paddingHorizontal: 16, height: 40, borderRadius: 24, marginRight: 8 },
+  sendButton: { padding: 10 },
 });
