@@ -22,19 +22,24 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Setup EAS CLI
-        run: npm install -g eas-cli
+      - name: Generate Native Android Folder
+        run: npx expo prebuild --platform android --clean
 
-      - name: Build Local APK using EAS
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'oracle'
+          java-version: '17'
+
+      - name: Build Android Release APK
         run: |
-          npx eas-cli build --local --platform android --profile preview --non-interactive
+          cd android
+          chmod +x gradlew
+          ./gradlew clean
+          ./gradlew assembleRelease
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SecureChat-APK
-          path: |
-            *.apk
-            **/*.apk
-            android/app/build/outputs/apk/preview/*.apk
-            android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
