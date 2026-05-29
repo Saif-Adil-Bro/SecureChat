@@ -11,369 +11,305 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
-  Image,
+  Modal,
 } from "react-native";
-import { Svg, Path, Rect, Circle } from "react-native-svg";
+import { Svg, Path, Circle, Rect } from "react-native-svg";
 
-// Firebase Imports
-import { auth } from "../config/firebase";
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  signInAnonymously, 
-  onAuthStateChanged, 
-  signOut 
-} from "firebase/auth";
+// Firebase
+import { auth, db } from "../config/firebase";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, arrayUnion, onSnapshot } from "firebase/firestore";
 
 // Types
-interface Contact { id: number; name: string; avatar: string; lastMessage: string; time: string; unread: number; online: boolean; }
-interface Message { id: number; text: string; sent: boolean; time: string; status: 'read' | 'sent'; }
-interface MessagesState { [key: number]: Message[]; }
+interface Contact { id: string; name: string; avatar: string; email: string; lastMessage: string; time: string; }
+interface Message { id: number; text: string; sent: boolean; time: string; }
 
-// SVG Icons Helper (WhatsApp Style)
+// Icons Helper
 const Icons = {
-  Shield: () => (
-    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#128C7E" strokeWidth="2.5">
-      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </Svg>
-  ),
-  Search: () => (
-    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b1b3b5" strokeWidth="2">
-      <Circle cx="11" cy="11" r="8" /><Path d="M21 21l-4.3-4.3" />
-    </Svg>
-  ),
-  Menu: () => (
-    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b1b3b5" strokeWidth="2.5">
-      <Circle cx="12" cy="5" r="1" fill="#b1b3b5" />
-      <Circle cx="12" cy="12" r="1" fill="#b1b3b5" />
-      <Circle cx="12" cy="19" r="1" fill="#b1b3b5" />
-    </Svg>
-  ),
-  DoubleTick: ({ color = "#34b7f1" }) => (
-    <Svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-      <Path d="M17 5L9.5 12.5L6 9M22 5l-7.5 7.5" />
-    </Svg>
-  ),
-  Camera: () => (
-    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b1b3b5" strokeWidth="2">
-      <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <Circle cx="12" cy="13" r="4" />
-    </Svg>
-  ),
-  Back: () => (
-    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
-      <Path d="M19 12H5M12 19l-7-7 7-7" />
-    </Svg>
-  )
-};
-
-// Dummy WhatsApp Data
-const initialContacts: Contact[] = [
-  { id: 1, name: "টপ সিক্রেট গ্রুপ", avatar: "TG", lastMessage: "কোড এখন পারফেক্ট!", time: "8:45 PM", unread: 2, online: true },
-  { id: 2, name: "রকিব (Agent X)", avatar: "RX", lastMessage: "ভাই অ্যাপটা জোস হইছে", time: "Yesterday", unread: 0, online: false },
-  { id: 3, name: "Nazmul Haque", avatar: "NH", lastMessage: "ফায়ারবেজ ডাটাবেজ চেক করুন।", time: "Monday", unread: 0, online: true },
-];
-
-const initialMessages: MessagesState = {
-  1: [
-    { id: 1, text: "আসসালামু আলাইকুম, সিকিউর চ্যাট অ্যাপে স্বাগতম!", sent: false, time: "8:40 PM", status: 'read' },
-    { id: 2, text: "কোড এখন পারফেক্ট!", sent: false, time: "8:45 PM", status: 'read' },
-  ],
-  2: [],
-  3: []
+  Shield: () => <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#128C7E" strokeWidth="2.5"><Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Svg>,
+  Plus: () => <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><Path d="M12 5v14M5 12h14" /></Svg>,
+  Back: () => <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2"><Path d="M19 12H5M12 19l-7-7 7-7" /></Svg>
 };
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSignUp, setIsSignUp] = useState(false);
-  const [currentTab, setCurrentTab] = useState<"chats" | "status" | "calls">("chats");
 
-  // Inputs
+  // Inputs & Search
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [inputText, setInputText] = useState("");
+  const [searchEmail, setSearchEmail] = useState("");
+  const [isModalVisible, setIsModalVisible] = useState(false); // Add Contact Modal Toggle
 
-  // Chat Navigation
-  const [activeContact, setActiveContact] = useState<Contact | null>(null); // null means chat list view
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
-  const [messages, setMessages] = useState<MessagesState>(initialMessages);
+  // Chat Data States
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [activeContact, setActiveContact] = useState<Contact | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<ScrollView>(null);
 
+  // ১. ইউজার সেশন ও রিয়েলটাইম কন্টাক্ট লিস্ট লোড করা
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        // ফায়ারস্টোর থেকে ইউজারের নিজস্ব কন্টাক্ট লিস্ট রিয়েলটাইম ট্র্যাক করা
+        const userDocRef = doc(db, "users", currentUser.uid);
+        const unsubDoc = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists() && docSnap.data().contacts) {
+            setContacts(docSnap.data().contacts);
+          }
+        });
+        return () => unsubDoc();
+      }
       setLoading(false);
     });
     return unsubscribe;
   }, []);
 
+  // চ্যাট ওপেন হলে মেসেজ রিয়েলটাইম লোড করার হুক
+  useEffect(() => {
+    if (!user || !activeContact) return;
+    // চ্যাট রুম আইডি তৈরি (দুই ইউজারের আইডি ক্রমানুসারে সাজিয়ে ইউনিক আইডি)
+    const roomId = [user.uid, activeContact.id].sort().join("_");
+    const roomRef = doc(db, "chats", roomId);
+    
+    const unsubChats = onSnapshot(roomRef, (docSnap) => {
+      if (docSnap.exists() && docSnap.data().messages) {
+        setMessages(docSnap.data().messages);
+      } else {
+        setMessages([]);
+      }
+      setLoading(false);
+    });
+    return () => unsubChats();
+  }, [activeContact]);
+
+  // ২. সাইনআপ (নতুন ইউজার তৈরি ও ডাটাবেজে প্রোফাইল সেভ)
   const handleSignUp = async () => {
-    if (!email || !password) return Alert.alert("ভুল", "দয়া করে সব ঘর পূরণ করুন।");
+    if (!email || !password) return Alert.alert("ভুল", "সব ঘর পূরণ করুন।");
     setLoading(true);
-    try { await createUserWithEmailAndPassword(auth, email.trim(), password); } 
-    catch (e: any) { Alert.alert("সাইনআপ ব্যর্থ", e.message); } finally { setLoading(false); }
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const newUser = userCredential.user;
+      
+      // ফায়ারস্টোরে ইউজারের একটি প্রোফাইল ডকুমেন্ট তৈরি করা
+      await setDoc(doc(db, "users", newUser.uid), {
+        uid: newUser.uid,
+        email: newUser.email,
+        name: email.split('@')[0], // ইমেইলের প্রথম অংশকে নাম হিসেবে ধরা হলো
+        contacts: [] // শুরুতে কন্টাক্ট লিস্ট খালি থাকবে
+      });
+      Alert.alert("সফল", "অ্যাকাউন্ট তৈরি সম্পূর্ণ!");
+    } catch (e: any) { Alert.alert("সাইনআপ ব্যর্থ", e.message); }
+    finally { setLoading(false); }
   };
 
   const handleSignIn = async () => {
     if (!email || !password) return Alert.alert("ভুল", "ইমেইল এবং পাসওয়ার্ড দিন।");
     setLoading(true);
     try { await signInWithEmailAndPassword(auth, email.trim(), password); } 
-    catch (e: any) { Alert.alert("লগইন ব্যর্থ", "ইমেইল বা পাসওয়ার্ড ভুল।"); } finally { setLoading(false); }
+    catch (e: any) { Alert.alert("লগইন ব্যর্থ", "ইমেইল বা পাসওয়ার্ড ভুল।"); }
+    finally { setLoading(false); }
   };
 
-  const handleAnonymousLogin = async () => {
+  // ৩. হোয়াটসঅ্যাপের মতো কন্টাক্ট খুঁজে অ্যাড করার মেইন ফাংশন (BACKEND & FRONTEND)
+  const handleAddContact = async () => {
+    if (!searchEmail.trim()) return Alert.alert("ভুল", "ইমেইল টাইপ করুন।");
+    if (searchEmail.trim() === user.email) return Alert.alert("ভুল", "নিজের ইমেইল অ্যাড করা যাবে না।");
+    
     setLoading(true);
-    try { await signInAnonymously(auth); } 
-    catch (e) { Alert.alert("ব্যর্থ", "গেস্ট লগইন কাজ করছে না।"); } finally { setLoading(false); }
+    try {
+      // ক) সার্চ করা ইমেইলটি ডাটাবেজে আছে কি না তা খুঁজে বের করা
+      const q = query(collection(db, "users"), where("email", "==", searchEmail.trim().toLowerCase()));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        Alert.alert("পাওয়া যায়নি", "এই ইমেইল দিয়ে কোনো SecureChat অ্যাকাউন্ট খোলা নেই।");
+        setLoading(false);
+        return;
+      }
+
+      // খ) ইউজার পাওয়া গেলে তার ডাটা নেওয়া
+      const targetUserDoc = querySnapshot.docs[0];
+      const targetUserData = targetUserDoc.data();
+
+      // গ) আপনার বর্তমান কন্টাক্ট লিস্টে চেক করা যে অলরেডি অ্যাড আছে কি না
+      const isAlreadyAdded = contacts.some(c => c.id === targetUserData.uid);
+      if (isAlreadyAdded) {
+        Alert.alert("দুঃখিত", "এই কন্টাক্টটি অলরেডি আপনার লিস্টে আছে।");
+        setLoading(false);
+        return;
+      }
+
+      const newContactObj: Contact = {
+        id: targetUserData.uid,
+        name: targetUserData.name,
+        avatar: targetUserData.name.substring(0,2).toUpperCase(),
+        email: targetUserData.email,
+        lastMessage: "No messages yet",
+        time: "Now"
+      };
+
+      // ঘ) ব্যাকএন্ড ফায়ারস্টোরে আপনার অ্যাকাউন্ট ডকুমেন্টের ভিতর কন্টাক্টটি পুশ করা
+      const myDocRef = doc(db, "users", user.uid);
+      await updateDoc(myDocRef, {
+        contacts: arrayUnion(newContactObj)
+      });
+
+      Alert.alert("সফল", `${targetUserData.name} আপনার চ্যাট লিস্টে যুক্ত হয়েছে!`);
+      setIsModalVisible(false);
+      setSearchEmail("");
+    } catch (error: any) {
+      Alert.alert("ত্রুটি", "কন্টাক্ট যুক্ত করা যায়নি।");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleLogOut = async () => {
-    try { await signOut(auth); setActiveContact(null); } catch (e) { Alert.alert("ত্রুটি", "লগআউট করা যায়নি।"); }
-  };
-
-  const handleSendMessage = () => {
+  // ৪. রিয়েলটাইম মেসেজ পাঠানো (Firestore database sync)
+  const handleSendMessage = async () => {
     if (!inputText.trim() || !activeContact) return;
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
-    const newMsg: Message = {
-      id: Date.now(),
-      text: inputText,
-      sent: true,
-      time: timeStr,
-      status: 'sent',
-    };
+    const roomId = [user.uid, activeContact.id].sort().join("_");
+    const chatRoomRef = doc(db, "chats", roomId);
 
-    setMessages((prev) => ({
-      ...prev,
-      [activeContact.id]: [...(prev[activeContact.id] || []), newMsg],
-    }));
+    const newMsg: Message = { id: Date.now(), text: inputText, sent: true, time: timeStr };
 
-    // Update List preview
-    setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, lastMessage: inputText, time: timeStr } : c));
-    setInputText("");
+    try {
+      const roomSnap = await getDoc(chatRoomRef);
+      if (!roomSnap.exists()) {
+        await setDoc(chatRoomRef, { messages: [newMsg] });
+      } else {
+        await updateDoc(chatRoomRef, { messages: arrayUnion(newMsg) });
+      }
+      setInputText("");
+    } catch (e) {
+      console.log("Error sending message:", e);
+    }
   };
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: "center" }]}>
-        <ActivityIndicator size="large" color="#075E54" />
-      </View>
-    );
+  if (loading && !user) {
+    return <View style={[styles.container, { justifyContent: "center" }]}><ActivityIndicator size="large" color="#00a884" /></View>;
   }
 
-  // --- স্ক্রিন ১: হোয়াটসঅ্যাপ ম্যাচিং ডার্ক লগইন পেজ ---
+  // Auth Screen 
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.authCentered}>
+        <View style={styles.authCentered}>
           <View style={styles.authCard}>
-            <View style={{ alignItems: "center", marginBottom: 28 }}>
-              <Icons.Shield />
-              <Text style={styles.authTitle}>SecureChat WhatsApp</Text>
-              <Text style={styles.authSubtitle}>End-to-End Encrypted</Text>
-            </View>
-
-            <TextInput style={styles.inputField} placeholder="আপনার ইমেইল" placeholderTextColor="#8696a0" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+            <View style={{ alignItems: "center", marginBottom: 20 }}><Icons.Shield /><Text style={styles.authTitle}>SecureChat</Text></View>
+            <TextInput style={styles.inputField} placeholder="ইমেইল" placeholderTextColor="#8696a0" value={email} onChangeText={setEmail} autoCapitalize="none" />
             <TextInput style={styles.inputField} placeholder="পাসওয়ার্ড" placeholderTextColor="#8696a0" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
-
-            <TouchableOpacity style={styles.waButton} onPress={isSignUp ? handleSignUp : handleSignIn}>
-              <Text style={styles.waButtonText}>{isSignUp ? "সাইন আপ" : "লগইন"}</Text>
-            </TouchableOpacity>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#202c33' }} /><Text style={{ color: '#8696a0', paddingHorizontal: 10, fontSize: 12 }}>OR</Text><View style={{ flex: 1, height: 1, backgroundColor: '#202c33' }} />
-            </View>
-
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <TouchableOpacity style={styles.waSocialBtn} onPress={handleAnonymousLogin}><Text style={{ color: '#00a884', fontWeight: 'bold' }}>👤 Guest Login</Text></TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={{ marginTop: 24 }} onPress={() => setIsSignUp(!isSignUp)}>
-              <Text style={{ color: '#00a884', textAlign: 'center', fontSize: 14 }}>
-                {isSignUp ? "আগে অ্যাকাউন্ট আছে? লগইন করুন" : "নতুন অ্যাকাউন্ট তৈরি করুন"}
-              </Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.waButton} onPress={isSignUp ? handleSignUp : handleSignIn}><Text style={styles.waButtonText}>{isSignUp ? "সাইন আপ" : "লগইন"}</Text></TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 20 }} onPress={() => setIsSignUp(!isSignUp)}><Text style={{ color: '#00a884', textAlign: 'center' }}>{isSignUp ? "আগে অ্যাকাউন্ট আছে? লগইন করুন" : "নতুন অ্যাকাউন্ট তৈরি করুন"}</Text></TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </SafeAreaView>
     );
   }
 
-  // --- স্ক্রিন ২: হোয়াটসঅ্যাপ মেইন ড্যাশবোর্ড (চ্যাট লিস্ট ভিউ) ---
-  if (!activeContact) {
-    return (
-      <SafeAreaView style={styles.container}>
-        {/* WhatsApp Main Top Header */}
-        <View style={styles.waHeader}>
-          <Text style={styles.waHeaderTitle}>SecureChat</Text>
-          <View style={styles.waHeaderIcons}>
-            <TouchableOpacity style={styles.iconPadding}><Icons.Camera /></TouchableOpacity>
-            <TouchableOpacity style={styles.iconPadding}><Icons.Search /></TouchableOpacity>
-            <TouchableOpacity onPress={handleLogOut} style={styles.iconPadding}><Icons.Menu /></TouchableOpacity>
-          </View>
-        </View>
-
-        {/* WhatsApp Custom Top Tabs */}
-        <View style={styles.waTabBar}>
-          <TouchableOpacity onPress={() => setCurrentTab("chats")} style={[styles.waTab, currentTab === "chats" && styles.waActiveTab]}>
-            <Text style={[styles.waTabText, currentTab === "chats" && styles.waActiveTabText]}>Chats</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setCurrentTab("status")} style={[styles.waTab, currentTab === "status" && styles.waActiveTab]}>
-            <Text style={[styles.waTabText, currentTab === "status" && styles.waActiveTabText]}>Status</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setCurrentTab("calls")} style={[styles.waTab, currentTab === "calls" && styles.waActiveTab]}>
-            <Text style={[styles.waTabText, currentTab === "calls" && styles.waActiveTabText]}>Calls</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Tab Body */}
-        {currentTab === "chats" ? (
-          <ScrollView style={{ flex: 1 }}>
-            {contacts.map((item) => (
-              <TouchableOpacity key={item.id} style={styles.waChatRow} onPress={() => setActiveContact(item)}>
-                {/* Profile Pic/Avatar */}
-                <View style={styles.waAvatar}>
-                  <Text style={styles.waAvatarText}>{item.avatar}</Text>
-                  {item.online && <View style={styles.onlineDot} />}
-                </View>
-                {/* Names and texts */}
-                <View style={styles.waChatRowDetails}>
-                  <View style={styles.waRowTopLine}>
-                    <Text style={styles.waProfileName}>{item.name}</Text>
-                    <Text style={[styles.waRowTime, item.unread > 0 && { color: '#00a884' }]}>{item.time}</Text>
-                  </View>
-                  <View style={styles.waRowBottomLine}>
-                    <Text style={styles.waRowPreview} numberOfLines={1}>{item.lastMessage}</Text>
-                    {item.unread > 0 && (
-                      <View style={styles.waUnreadBadge}><Text style={styles.waUnreadText}>{item.unread}</Text></View>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        ) : (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ color: '#8696a0' }}>হোয়াটসঅ্যাপের এই ফিচারটি শীঘ্রই আসছে...</Text>
-          </View>
-        )}
-      </SafeAreaView>
-    );
-  }
-
-  // --- স্ক্রিন ৩: হোয়াটসঅ্যাপ রিয়েল চ্যাট স্ক্রিন (ইনসাইড চ্যাট) ---
-  const activeMessages = messages[activeContact.id] || [];
-
+  // WhatsApp Home Screen
   return (
     <SafeAreaView style={styles.container}>
-      {/* চ্যাট স্ক্রিন হেডার */}
-      <View style={styles.waChatHeader}>
-        <TouchableOpacity onPress={() => setActiveContact(null)} style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Icons.Back />
-          <View style={[styles.waAvatar, { width: 36, height: 36, marginLeft: 4, marginRight: 8 }]}>
-            <Text style={[styles.waAvatarText, { fontSize: 14 }]}>{activeContact.avatar}</Text>
+      {!activeContact ? (
+        <>
+          <View style={styles.waHeader}>
+            <Text style={styles.waHeaderTitle}>SecureChat</Text>
+            <TouchableOpacity onPress={() => auth.signOut()}><Text style={{ color: '#ff3d00', fontWeight: 'bold' }}>Logout</Text></TouchableOpacity>
           </View>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.waProfileName}>{activeContact.name}</Text>
-          <Text style={{ color: '#8696a0', fontSize: 12 }}>{activeContact.online ? "online" : "offline"}</Text>
-        </View>
-        <View style={styles.waHeaderIcons}>
-          <TouchableOpacity style={styles.iconPadding}><Icons.Menu /></TouchableOpacity>
-        </View>
-      </View>
 
-      {/* হোয়াটসঅ্যাপ চ্যাট ওয়ালপেপার ব্যাকগ্রাউন্ড */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: '#0b141a' }}>
-        <ScrollView 
-          ref={messagesEndRef}
-          style={{ flex: 1, paddingHorizontal: 12, paddingVertical: 8 }}
-          onContentSizeChange={() => messagesEndRef.current?.scrollToEnd({ animated: true })}
-        >
-          {activeMessages.map((msg) => (
-            <View key={msg.id} style={[styles.waMsgBubble, msg.sent ? styles.waSentBubble : styles.waReceivedBubble]}>
-              <Text style={{ color: '#e9edef', fontSize: 15 }}>{msg.text}</Text>
-              <View style={styles.waMsgFooter}>
-                <Text style={styles.waMsgTime}>{msg.time}</Text>
-                {msg.sent && <Icons.DoubleTick color={msg.status === 'read' ? '#53bdeb' : '#8696a0'} />}
+          {/* চ্যাট লিস্ট বডি */}
+          <ScrollView style={{ flex: 1 }}>
+            {contacts.length === 0 ? (
+              <View style={{ padding: 40, alignItems: 'center' }}><Text style={{ color: '#8696a0', textAlign: 'center' }}>নিচের (+) বাটনে ক্লিক করে ইমেইল দিয়ে আপনার বন্ধুদের চ্যাট লিস্টে যোগ করুন!</Text></View>
+            ) : (
+              contacts.map((item) => (
+                <TouchableOpacity key={item.id} style={styles.waChatRow} onPress={() => setActiveContact(item)}>
+                  <View style={styles.waAvatar}><Text style={styles.waAvatarText}>{item.avatar}</Text></View>
+                  <View style={styles.waChatRowDetails}>
+                    <View style={styles.waRowTopLine}><Text style={styles.waProfileName}>{item.name}</Text><Text style={styles.waRowTime}>{item.time}</Text></View>
+                    <Text style={styles.waRowPreview} numberOfLines={1}>{item.lastMessage}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+
+          {/* হোয়াটসঅ্যাপ স্টাইল ফ্লোটিং 'Add Contact' (+) বাটন */}
+          <TouchableOpacity style={styles.floatingButton} onPress={() => setIsModalVisible(true)}>
+            <Icons.Plus />
+          </TouchableOpacity>
+
+          {/* Add Contact Popup Modal */}
+          <Modal visible={isModalVisible} transparent animationType="slide">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Add Contact (নতুন বন্ধু যোগ করুন)</Text>
+                <TextInput style={styles.inputField} placeholder="বন্ধুর SecureChat ইমেইলটি লিখুন" placeholderTextColor="#8696a0" value={searchEmail} onChangeText={setSearchEmail} autoCapitalize="none" />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+                  <TouchableOpacity style={[styles.waButton, { flex: 1, backgroundColor: '#202c33', marginRight: 8 }]} onPress={() => setIsModalVisible(false)}><Text style={{ color: '#fff' }}>বাতিল</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.waButton, { flex: 1 }]} onPress={handleAddContact}><Text style={styles.waButtonText}>যোগ করুন</Text></TouchableOpacity>
+                </View>
               </View>
             </View>
-          ))}
-        </ScrollView>
-
-        {/* হোয়াটসঅ্যাপ স্টাইল বটম ইনপুট বার */}
-        <View style={styles.waInputBar}>
-          <View style={styles.waInputMainBox}>
-            <TextInput
-              style={styles.waTextInput}
-              value={inputText}
-              onChangeText={setInputText}
-              placeholder="Message"
-              placeholderTextColor="#8696a0"
-              multiline
-            />
+          </Modal>
+        </>
+      ) : (
+        // Realtime Chat View Inside
+        <View style={{ flex: 1 }}>
+          <View style={styles.waChatHeader}>
+            <TouchableOpacity onPress={() => setActiveContact(null)} style={{ flexDirection: 'row', alignItems: 'center' }}><Icons.Back /><View style={[styles.waAvatar, { width: 36, height: 36, marginLeft: 4, marginRight: 8 }]}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{activeContact.avatar}</Text></View></TouchableOpacity>
+            <Text style={styles.waProfileName}>{activeContact.name}</Text>
           </View>
-          <TouchableOpacity style={styles.waSendCircle} onPress={handleSendMessage}>
-            <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold' }}>Send</Text>
-          </TouchableOpacity>
+          <ScrollView ref={messagesEndRef} style={{ flex: 1, padding: 12, backgroundColor: '#0b141a' }} onContentSizeChange={() => messagesEndRef.current?.scrollToEnd({ animated: true })}>
+            {messages.map((msg) => (
+              <View key={msg.id} style={[styles.waMsgBubble, msg.sent ? styles.waSentBubble : styles.waReceivedBubble]}><Text style={{ color: '#e9edef', fontSize: 15 }}>{msg.text}</Text><Text style={styles.waMsgTime}>{msg.time}</Text></View>
+            ))}
+          </ScrollView>
+          <View style={styles.waInputBar}>
+            <View style={styles.waInputMainBox}><TextInput style={styles.waTextInput} value={inputText} onChangeText={setInputText} placeholder="Message" placeholderTextColor="#8696a0" /></View>
+            <TouchableOpacity style={styles.waSendCircle} onPress={handleSendMessage}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Send</Text></TouchableOpacity>
+          </View>
         </View>
-      </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
 
-// WhatsApp Original Dark Theme Colors
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#111b21" },
   authCentered: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
   authCard: { width: "100%", maxWidth: 350, backgroundColor: "#222e35", padding: 24, borderRadius: 12 },
   authTitle: { color: "#e9edef", fontSize: 20, fontWeight: "bold", marginTop: 12 },
-  authSubtitle: { color: "#8696a0", fontSize: 12, marginTop: 4 },
   inputField: { width: "100%", backgroundColor: "#2a3942", color: "#fff", padding: 14, borderRadius: 8, marginBottom: 16 },
-  waButton: { width: "100%", backgroundColor: "#00a884", padding: 14, borderRadius: 24, alignItems: "center" },
-  waButtonText: { color: "#111b21", fontSize: 16, fontWeight: "bold" },
-  waSocialBtn: { flex: 1, backgroundColor: "#2a3942", padding: 12, borderRadius: 8, alignItems: "center" },
-  
-  // Custom Header
+  waButton: { backgroundColor: "#00a884", padding: 12, borderRadius: 24, alignItems: "center" },
+  waButtonText: { color: "#111b21", fontSize: 15, fontWeight: "bold" },
   waHeader: { height: 60, flexDirection: 'row', backgroundColor: '#202c33', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
   waHeaderTitle: { color: '#e9edef', fontSize: 21, fontWeight: '600' },
-  waHeaderIcons: { flexDirection: 'row', alignItems: 'center' },
-  iconPadding: { paddingHorizontal: 12 },
-  
-  // Custom TabBar
-  waTabBar: { height: 48, flexDirection: 'row', backgroundColor: '#202c33' },
-  waTab: { flex: 1, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
-  waActiveTab: { borderBottomColor: '#00a884' },
-  waTabText: { color: '#8696a0', fontSize: 14, fontWeight: 'bold' },
-  waActiveTabText: { color: '#00a884' },
-  
-  // Chat Rows
   waChatRow: { flexDirection: 'row', height: 72, paddingHorizontal: 16, alignItems: 'center' },
-  waAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#687c87', justifyContent: 'center', alignItems: 'center', position: 'relative' },
-  waAvatarText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  onlineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#00a884', position: 'absolute', bottom: 2, right: 2, borderWidth: 2, borderColor: '#111b21' },
-  waChatRowDetails: { flex: 1, marginLeft: 14, height: '100%', justifyContent: 'center', borderBottomWidth: 0.5, borderBottomColor: '#202c33' },
+  waAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#687c87', justifyContent: 'center', alignItems: 'center' },
+  waAvatarText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  waChatRowDetails: { flex: 1, marginLeft: 14, justifyContent: 'center' },
   waRowTopLine: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   waProfileName: { color: '#e9edef', fontSize: 16, fontWeight: '500' },
   waRowTime: { color: '#8696a0', fontSize: 12 },
-  waRowBottomLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  waRowPreview: { color: '#8696a0', fontSize: 14, flex: 1, paddingRight: 10 },
-  waUnreadBadge: { backgroundColor: '#00a884', width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  waUnreadText: { color: '#111b21', fontSize: 12, fontWeight: 'bold' },
-
-  // Chat Interface Inside
+  waRowPreview: { color: '#8696a0', fontSize: 14 },
+  floatingButton: { position: 'absolute', bottom: 24, right: 24, backgroundColor: '#00a884', width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', maxWidth: 340, backgroundColor: '#222e35', padding: 20, borderRadius: 12 },
+  modalTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 16 },
   waChatHeader: { height: 60, backgroundColor: '#202c33', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
-  waMsgBubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, marginBottom: 6, maxWidth: '85%' },
-  waSentBubble: { backgroundColor: '#005c4b', alignSelf: 'flex-end', borderTopRightRadius: 0 },
-  waReceivedBubble: { backgroundColor: '#202c33', alignSelf: 'flex-start', borderTopLeftRadius: 0 },
-  waMsgFooter: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 2 },
-  waMsgTime: { color: '#8696a0', fontSize: 10, marginRight: 4 },
-
-  // Bottom Input Bar
-  waInputBar: { flexDirection: 'row', padding: 8, backgroundColor: 'transparent', alignItems: 'center' },
-  waInputMainBox: { flex: 1, backgroundColor: '#202c33', borderRadius: 24, paddingHorizontal: 16, minHeight: 44, justifyContent: 'center' },
-  waTextInput: { color: '#fff', fontSize: 16, paddingVertical: 6 },
+  waMsgBubble: { padding: 10, borderRadius: 10, marginBottom: 6, maxWidth: '85%' },
+  waSentBubble: { backgroundColor: '#005c4b', alignSelf: 'flex-end' },
+  waReceivedBubble: { backgroundColor: '#202c33', alignSelf: 'flex-start' },
+  waMsgTime: { color: '#8696a0', fontSize: 10, alignSelf: 'flex-end', marginTop: 2 },
+  waInputBar: { flexDirection: 'row', padding: 8, alignItems: 'center', backgroundColor: '#111b21' },
+  waInputMainBox: { flex: 1, backgroundColor: '#202c33', borderRadius: 24, paddingHorizontal: 16, height: 44, justifyContent: 'center' },
+  waTextInput: { color: '#fff', fontSize: 16 },
   waSendCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#00a884', justifyContent: 'center', alignItems: 'center', marginLeft: 6 }
 });
