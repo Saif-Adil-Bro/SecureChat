@@ -1,281 +1,191 @@
-import React, { useState, useRef, useEffect } from "react";
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
-  SafeAreaView, 
-  StatusBar,
-  Animated,
-  Dimensions
+import React, { useState, useRef } from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
 } from "react-native";
 import { Svg, Rect, Path, Circle } from "react-native-svg";
 
-const { width } = Dimensions.get("window");
-
-const CONTACTS = [
-  { id: 1, name: "রাফি আহমেদ", avatar: "RA", status: "online", lastSeen: "এখন", color: "#00e5ff" },
-  { id: 2, name: "সাবরিনা ইসলাম", avatar: "SI", status: "online", lastSeen: "এখন", color: "#ff4081" },
-  { id: 3, name: "তানভীর হোসেন", avatar: "TH", status: "offline", lastSeen: "৩০ মিনিট আগে", color: "#76ff03" },
-  { id: 4, name: "নাফিসা রহমান", avatar: "NR", status: "offline", lastSeen: "২ ঘণ্টা আগে", color: "#ffab40" },
-];
-
-const INITIAL_MESSAGES = {
-  1: [
-    { id: 1, text: "হ্যালো! কেমন আছো?", sent: false, time: "১০:০০", encrypted: true },
-    { id: 2, text: "ভালো আছি, তুমি কেমন?", sent: true, time: "১০:০২", encrypted: true },
-    { id: 3, text: "এই অ্যাপটা দারুণ! সব মেসেজ এনক্রিপ্টেড 🔒", sent: false, time: "১০:০৫", encrypted: true },
-  ],
-  2: [
-    { id: 1, text: "আজকের মিটিং কয়টায়?", sent: false, time: "০৯:৩০", encrypted: true },
-    { id: 2, text: "বিকাল ৩টায়।", sent: true, time: "০৯:৩২", encrypted: true },
-  ],
-  3: [],
-  4: [
-    { id: 1, text: "প্রজেক্টের আপডেট পাঠাও", sent: true, time: "গতকাল", encrypted: true },
-  ],
-};
-
-// Svg Icons converted for React Native SVG
-function LockIcon() {
-  return (
-    <Svg width="10" height="12" viewBox="0 0 10 12" fill="none">
-      <Rect x="1" y="5" width="8" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-      <Path d="M2.5 5V3.5a2.5 2.5 0 015 0V5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-      <Circle cx="5" cy="8.5" r="1" fill="currentColor"/>
-    </Svg>
-  );
+// Types Definition
+interface Contact {
+  id: number;
+  name: string;
+  avatar: string;
+  status: string;
+  lastSeen: string;
+  color: string;
 }
 
+interface Message {
+  id: number;
+  text: string;
+  sent: boolean;
+  time: string;
+  encrypted: boolean;
+}
+
+interface MessagesState {
+  [key: number]: Message[];
+}
+
+// Icons
 function ShieldIcon() {
   return (
-    <Svg width="16" height="18" viewBox="0 0 16 18" fill="none">
-      <Path d="M8 1L2 3.5V8c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V3.5L8 1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
-      <Path d="M5 9l2 2 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" strokeWidth="2">
+      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </Svg>
   );
 }
 
-function SendIcon({ color }) {
+function LockIcon() {
   return (
-    <Svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <Path d="M16 2L8 10M16 2L11 16L8 10M16 2L2 7L8 10" stroke={color || "currentColor"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" strokeWidth="2">
+      <Rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </Svg>
   );
 }
 
-function BackIcon() {
+function SendIcon({ color }: { color: string }) {
   return (
-    <Svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <Path d="M12 15L7 10L12 5" stroke="#00e5ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+      <Line x1="22" y1="2" x2="11" y2="13" />
+      <Polygon points="22 2 15 22 11 13 2 9 22 2" />
     </Svg>
   );
 }
 
-export default function index() {
-  const [activeContact, setActiveContact] = useState(null);
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
-  const [input, setInput] = useState("");
-  const [showEncryptAnim, setShowEncryptAnim] = useState(false);
-  const [search, setSearch] = useState("");
-  const messagesEndRef = useRef(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+// Dummy helper component for subline missing React Native elements
+function Line(props: any) { return <Path d={`M${props.x1} ${props.y1} L${props.x2} ${props.y2}`} {...props} /> }
+function Polygon(props: any) { return <Path d={`M ${props.points}`} {...props} /> }
 
-  useEffect(() => {
-    if (showEncryptAnim) {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [showEncryptAnim]);
+const contactsData: Contact[] = [
+  { id: 1, name: "টপ সিক্রেট গ্রুপ", avatar: "TG", status: "online", lastSeen: "", color: "#00e5ff" },
+  { id: 2, name: "রকিব (Agent X)", avatar: "RX", status: "online", lastSeen: "", color: "#ff3d00" },
+  { id: 3, name: "তাসনিম (HQ)", avatar: "TH", status: "offline", lastSeen: "১০ মিনিট আগে", color: "#00e676" },
+  { id: 4, name: "বসের ফোন", avatar: "BP", status: "offline", lastSeen: "১ ঘণ্টা আগে", color: "#ffea00" },
+];
 
-  const sendMessage = () => {
-    if (!input.trim() || !activeContact) return;
-    const newMsg = {
+const initialMessages: MessagesState = {
+  1: [
+    { id: 1, text: "নতুন সিকিউর মেসেঞ্জার কোডটি কি রেডি?", sent: false, time: "১০:০৫ AM", encrypted: true },
+    { id: 2, text: "হ্যাঁ ভাই, UI এবং টাইপস্ক্রিপ্ট সব ফিক্স করা হয়েছে।", sent: true, time: "১০:০৬ AM", encrypted: true },
+  ],
+  2: [],
+  3: [],
+  4: [],
+};
+
+export default function SecureChat() {
+  const [contacts] = useState<Contact[]>(contactsData);
+  const [activeContact, setActiveContact] = useState<Contact | null>(contactsData[0]);
+  const [messages, setMessages] = useState<MessagesState>(initialMessages);
+  const [inputText, setInputText] = useState("");
+  
+  const messagesEndRef = useRef<ScrollView>(null);
+
+  const handleSendMessage = () => {
+    if (!inputText.trim() || !activeContact) return;
+
+    const newMsg: Message = {
       id: Date.now(),
-      text: input.trim(),
+      text: inputText,
       sent: true,
-      time: new Date().toLocaleTimeString("bn-BD", { hour: "2-digit", minute: "2-digit" }),
+      time: "১০:১০ AM",
       encrypted: true,
     };
-    setMessages(prev => ({
+
+    setMessages((prev) => ({
       ...prev,
       [activeContact.id]: [...(prev[activeContact.id] || []), newMsg],
     }));
-    setInput("");
-    setShowEncryptAnim(true);
-    setTimeout(() => setShowEncryptAnim(false), 1200);
-  };
 
-  const filtered = CONTACTS.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
+    setInputText("");
+  };
 
   const currentMessages = activeContact ? messages[activeContact.id] || [] : [];
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#060a10" />
-      
-      {!activeContact ? (
-        // Sidebar / Contact List View
-        <View style={styles.innerContainer}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerTop}>
-              <View style={{ color: "#00e5ff" }}><ShieldIcon /></View>
-              <Text style={styles.headerTitle}>SecureChat</Text>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>E2E ENCRYPTED</Text>
-              </View>
-            </View>
-            <TextInput
-              placeholder="🔍  যোগাযোগ খুঁজুন..."
-              placeholderTextColor="#2e4a5a"
-              value={search}
-              onChangeText={setSearch}
-              style={styles.searchInput}
-            />
-          </View>
-
-          {/* Contact List */}
-          <ScrollView style={styles.contactList}>
-            {filtered.map(contact => {
-              const lastMsg = messages[contact.id]?.slice(-1)[0];
-              return (
-                <TouchableOpacity
-                  key={contact.id}
-                  onClick={() => setActiveContact(contact)}
-                  style={styles.contactItem}
-                >
-                  <View style={styles.avatarContainer}>
-                    <View style={[styles.avatar, { backgroundColor: `${contact.color}20`, borderColor: `${contact.color}40` }]}>
-                      <Text style={[styles.avatarText, { color: contact.color }]}>{contact.avatar}</Text>
-                    </View>
-                    <View style={[styles.statusDot, { backgroundColor: contact.status === "online" ? "#00e676" : "#546e7a" }]} />
-                  </View>
-                  
-                  <View style={styles.contactDetails}>
-                    <View style={styles.contactRow}>
-                      <Text style={styles.contactName}>{contact.name}</Text>
-                      <Text style={styles.contactTime}>{lastMsg?.time || ""}</Text>
-                    </View>
-                    <View style={styles.msgRow}>
-                      <Text style={styles.lockIconMini}><LockIcon /></Text>
-                      <Text style={styles.lastMsgText} numberOfLines={1}>
-                        {lastMsg ? lastMsg.text : "কোনো মেসেজ নেই"}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Footer Badge */}
-          <View style={styles.footerBadge}>
-            <Text style={{ color: "#2e4a5a", marginRight: 6 }}><LockIcon /></Text>
-            <Text style={styles.footerBadgeText}>সকল মেসেজ এন্ড-টু-এন্ড এনক্রিপ্টেড</Text>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.innerContainer}>
+        
+        {/* Sidebar/Contact List if no active contact or full screen split */}
+        <View style={styles.header}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ marginRight: 8 }}><ShieldIcon /></View>
+            <Text style={styles.headerTitle}>SecureChat V2.8</Text>
           </View>
         </View>
-      ) : (
-        // Chat Panel View
-        <View style={styles.innerContainer}>
-          {/* Chat Header */}
-          <View style={styles.chatHeader}>
-            <TouchableOpacity onPress={() => setActiveContact(null)} style={styles.backButton}>
-              <BackIcon />
-            </TouchableOpacity>
-            
-            <View style={styles.avatarContainer}>
-              <View style={[styles.avatarSmall, { backgroundColor: `${activeContact.color}20`, borderColor: `${activeContact.color}50` }]}>
-                <Text style={[styles.avatarTextSmall, { color: activeContact.color }]}>{activeContact.avatar}</Text>
-              </View>
-              <View style={[styles.statusDotSmall, { backgroundColor: activeContact.status === "online" ? "#00e676" : "#546e7a" }]} />
-            </View>
 
-            <View style={styles.chatHeaderDetails}>
-              <Text style={styles.chatContactName}>{activeContact.name}</Text>
-              <Text style={[styles.chatStatusText, { color: activeContact.status === "online" ? "#00e676" : "#546e7a" }]}>
+        <ScrollView style={styles.contactList} horizontal showsHorizontalScrollIndicator={false}>
+          {contacts.map((contact) => {
+            const lastMsg = messages[contact.id]?.slice(-1)[0];
+            return (
+              <TouchableOpacity
+                key={contact.id}
+                onPress={() => setActiveContact(contact)}
+                style={[styles.contactCard, activeContact?.id === contact.id && styles.activeContactCard]}
+              >
+                <Text style={[styles.avatarText, { color: contact.color }]}>{contact.avatar}</Text>
+                <Text style={styles.contactName} numberOfLines={1}>{contact.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Chat Area */}
+        {activeContact ? (
+          <View style={styles.chatArea}>
+            <View style={styles.chatHeader}>
+              <Text style={styles.chatTitle}>{activeContact.name}</Text>
+              <Text style={styles.chatStatus}>
                 {activeContact.status === "online" ? "● অনলাইন" : `শেষ দেখা ${activeContact.lastSeen}`}
               </Text>
             </View>
 
-            <View style={styles.chatEncryptedBadge}>
-              <Text style={{ color: "#00e5ff", marginRight: 4 }}><LockIcon /></Text>
-              <Text style={styles.chatEncryptedBadgeText}>এনক্রিপ্টেড</Text>
-            </View>
-          </View>
-
-          {/* Encrypt Animation Bar */}
-          {showEncryptAnim && (
-            <Animated.View style={[styles.encryptBar, { opacity: fadeAnim }]}>
-              <Text style={styles.encryptBarText}>🔐 মেসেজ এনক্রিপ্ট হচ্ছে...</Text>
-            </Animated.View>
-          )}
-
-          {/* Messages Area */}
-          <ScrollView 
-            style={styles.messageArea}
-            ref={messagesEndRef}
-            onContentSizeChange={() => messagesEndRef.current?.scrollToEnd({ animated: true })}
-          >
-            {currentMessages.length === 0 && (
-              <View style={styles.emptyChat}>
-                <Text style={styles.emptyChatIcon}>🔒</Text>
-                <Text style={styles.emptyChatText}>কথোপকথন শুরু করুন</Text>
-                <Text style={styles.emptyChatSubText}>সব মেসেজ এন্ড-টু-এন্ড এনক্রিপ্টেড</Text>
-              </View>
-            )}
-            
-            {currentMessages.map((msg) => (
-              <View key={msg.id} style={[styles.messageRowContainer, { justifyContent: msg.sent ? "flex-end" : "flex-start" }]}>
-                <View style={[
-                  styles.messageBubble, 
-                  msg.sent ? styles.messageSent : styles.messageReceived
-                ]}>
+            <ScrollView 
+              ref={messagesEndRef}
+              style={styles.messageContainer}
+              onContentSizeChange={() => messagesEndRef.current?.scrollToEnd({ animated: true })}
+            >
+              {currentMessages.map((msg) => (
+                <View key={msg.id} style={[styles.messageBubble, msg.sent ? styles.sentBubble : styles.receivedBubble]}>
                   <Text style={styles.messageText}>{msg.text}</Text>
-                  <View style={styles.msgTimeContainer}>
-                    <Text style={styles.lockIconMicro}><LockIcon /></Text>
-                    <Text style={styles.msgTimeText}>{msg.time}</Text>
+                  <View style={styles.messageFooter}>
+                    {msg.encrypted && <LockIcon />}
+                    <Text style={styles.messageTime}>{msg.time}</Text>
                   </View>
                 </View>
-              </View>
-            ))}
-          </ScrollView>
+              ))}
+            </ScrollView>
 
-          {/* Input Area */}
-          <View style={styles.inputArea}>
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="মেসেজ লিখুন..."
-              placeholderTextColor="#2e4a5a"
-              style={styles.chatInput}
-            />
-            <TouchableOpacity 
-              onPress={sendMessage} 
-              disabled={!input.trim()}
-              style={[
-                styles.sendButton, 
-                { backgroundColor: input.trim() ? "#00b8d4" : "rgba(0,229,255,0.05)" }
-              ]}
-            >
-              <SendIcon color={input.trim() ? "#060a10" : "#1e3040"} />
-            </TouchableOpacity>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="গোপন বার্তা লিখুন..."
+                placeholderTextColor="#546e7a"
+              />
+              <TouchableOpacity onPress={handleSendMessage} style={styles.sendButton}>
+                <SendIcon color="#00e5ff" />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      )}
+        ) : (
+          <View style={styles.welcomeArea}>
+            <Text style={styles.welcomeText}>চ্যাট শুরু করতে যেকোনো একটি কন্টাক্ট সিলেক্ট করুন</Text>
+          </View>
+        )}
+
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -283,308 +193,129 @@ export default function index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    background: "#060a10",
     backgroundColor: "#060a10",
   },
   innerContainer: {
     flex: 1,
-    backgroundColor: "rgba(8,14,24,0.97)",
   },
   header: {
-    padding: 20,
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,229,255,0.08)",
-  },
-  headerTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
+    borderBottomColor: "#102a43",
+    backgroundColor: "#0b1528",
   },
   headerTitle: {
     color: "#00e5ff",
     fontSize: 18,
-    fontWeight: "700",
-    marginLeft: 10,
-    letterSpacing: 1,
-  },
-  badge: {
-    marginLeft: "auto",
-    backgroundColor: "rgba(0,229,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.2)",
-    borderRadius: 6,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-  },
-  badgeText: {
-    fontSize: 9,
-    color: "#00e5ff",
-    letterSpacing: 1,
-  },
-  searchInput: {
-    width: "100%",
-    backgroundColor: "rgba(0,229,255,0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.12)",
-    borderRadius: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    color: "#b0c4d8",
-    fontSize: 13,
+    fontWeight: "bold",
   },
   contactList: {
-    flex: 1,
-    paddingVertical: 8,
+    padding: 10,
+    backgroundColor: "#0b1528",
+    maxHeight: 80,
   },
-  contactItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.03)",
-  },
-  avatarContainer: {
-    position: "relative",
-  },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
+  contactCard: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#102a43",
+    marginRight: 10,
     alignItems: "center",
     justifyContent: "center",
+    height: 40,
+    flexDirection: "row",
+  },
+  activeContactCard: {
+    backgroundColor: "#00e5ff20",
+    borderColor: "#00e5ff",
+    borderWidth: 1,
   },
   avatarText: {
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  statusDot: {
-    position: "absolute",
-    bottom: 1,
-    right: 1,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: "#060a10",
-  },
-  contactDetails: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  contactRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    fontWeight: "bold",
+    marginRight: 6,
   },
   contactName: {
-    color: "#dce9f5",
-    fontWeight: "600",
-    fontSize: 14,
+    color: "#ffffff",
+    fontSize: 13,
   },
-  contactTime: {
-    color: "#546e7a",
-    fontSize: 11,
-  },
-  msgRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  lockIconMini: {
-    color: "#00e5ff",
-    opacity: 0.5,
-    marginRight: 4,
-  },
-  lastMsgText: {
-    color: "#546e7a",
-    fontSize: 12,
+  chatArea: {
     flex: 1,
-  },
-  footerBadge: {
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(0,229,255,0.08)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  footerBadgeText: {
-    color: "#2e4a5a",
-    fontSize: 11,
+    backgroundColor: "#060a10",
   },
   chatHeader: {
-    backgroundColor: "rgba(8,14,24,0.98)",
+    padding: 12,
+    backgroundColor: "#0b1528",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,229,255,0.08)",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
+    borderBottomColor: "#102a43",
   },
-  backButton: {
-    padding: 4,
-    marginRight: 8,
+  chatTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
-  avatarSmall: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarTextSmall: {
-    fontWeight: "700",
+  chatStatus: {
+    color: "#00e676",
     fontSize: 12,
   },
-  statusDotSmall: {
-    position: "absolute",
-    bottom: 1,
-    right: 1,
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    borderWidth: 2,
-    borderColor: "#060a10",
-  },
-  chatHeaderDetails: {
+  messageContainer: {
     flex: 1,
-    marginLeft: 12,
-  },
-  chatContactName: {
-    color: "#dce9f5",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  chatStatusText: {
-    fontSize: 11,
-    marginTop: 1,
-  },
-  chatEncryptedBadge: {
-    backgroundColor: "rgba(0,229,255,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.15)",
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  chatEncryptedBadgeText: {
-    color: "#00e5ff",
-    fontSize: 10,
-    letterSpacing: 1,
-  },
-  encryptBar: {
-    backgroundColor: "rgba(0,229,255,0.08)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,229,255,0.15)",
-    paddingVertical: 6,
-    paddingHorizontal: 20,
-    alignItems: "center",
-  },
-  encryptBarText: {
-    color: "#00e5ff",
-    fontSize: 11,
-  },
-  messageArea: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  emptyChat: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 100,
-  },
-  emptyChatIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  emptyChatText: {
-    fontSize: 13,
-    color: "#1e3040",
-    fontWeight: "600",
-  },
-  emptyChatSubText: {
-    fontSize: 11,
-    color: "#1a2a35",
-    marginTop: 4,
-  },
-  messageRowContainer: {
-    flexDirection: "row",
-    marginVertical: 5,
-    width: "100%",
+    padding: 16,
   },
   messageBubble: {
-    maxWidth: "75%",
+    padding: 12,
     borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    marginBottom: 10,
+    maxWidth: "80%",
+  },
+  sentBubble: {
+    backgroundColor: "#00e5ff15",
+    alignSelf: "flex-end",
     borderWidth: 1,
+    borderColor: "#00e5ff30",
   },
-  messageSent: {
-    backgroundColor: "#006778",
-    borderColor: "rgba(0,229,255,0.2)",
-    borderBottomRightRadius: 4,
-  },
-  messageReceived: {
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderColor: "rgba(255,255,255,0.06)",
-    borderBottomLeftRadius: 4,
+  receivedBubble: {
+    backgroundColor: "#102a43",
+    alignSelf: "flex-start",
   },
   messageText: {
-    color: "#dce9f5",
-    fontSize: 14,
-    lineHeight: 20,
+    color: "#ffffff",
+    fontSize: 15,
   },
-  msgTimeContainer: {
+  messageFooter: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
+    alignSelf: "flex-end",
     marginTop: 4,
   },
-  lockIconMicro: {
-    color: "#00e5ff",
-    opacity: 0.5,
-    fontSize: 9,
-    marginRight: 4,
-  },
-  msgTimeText: {
+  messageTime: {
     color: "#546e7a",
     fontSize: 10,
+    marginLeft: 4,
   },
-  inputArea: {
-    backgroundColor: "rgba(8,14,24,0.98)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(0,229,255,0.08)",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  inputContainer: {
     flexDirection: "row",
+    padding: 12,
+    backgroundColor: "#0b1528",
     alignItems: "center",
   },
-  chatInput: {
+  input: {
     flex: 1,
-    backgroundColor: "rgba(0,229,255,0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.12)",
-    borderRadius: 12,
-    paddingVertical: 11,
+    backgroundColor: "#102a43",
+    color: "#fff",
     paddingHorizontal: 16,
-    color: "#dce9f5",
-    fontSize: 14,
-    marginRight: 10,
+    paddingVertical: 10,
+    borderRadius: 24,
+    marginRight: 8,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(0,229,255,0.2)",
-    alignItems: "center",
+    padding: 10,
+  },
+  welcomeArea: {
+    flex: 1,
     justifyContent: "center",
+    alignItems: "center",
+  },
+  welcomeText: {
+    color: "#546e7a",
   },
 });
